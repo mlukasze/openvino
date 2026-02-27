@@ -39,8 +39,7 @@ Give high-signal review comments that help maintainers merge safely with minimal
 ## Revert PRs
 A revert PR restores a previously merged change. It is identified by the word "Revert" in the PR title or description, and typically references the original PR being reverted (e.g., `Reverts openvinotoolkit/openvino#NNNNN`).
 
-- **Treat revert PRs with a lighter review posture.** A revert is not new code — it restores a prior known state. Do not evaluate it as a new change.
-- **Focus the review on regression risk:** determine what the original PR fixed and whether reverting it re-introduces those issues (bugs, regressions, security fixes).
+- **Treat revert PRs with a lighter review posture** — a revert restores a prior known state, not new code. Focus exclusively on regression risk: what the original PR fixed and whether reverting re-introduces those issues.
 - Identify the original PR from the description or title. If possible, review its description and linked tickets to understand what it addressed.
 - If the revert re-introduces a known prior issue, add a `[MEDIUM]` reminder comment noting the risk. Do **not** use `[BLOCKER]` — the author is likely aware, but a reminder is valuable.
 - Do not request new tests, refactors, or style changes on revert PRs unless there is a clear correctness or security concern.
@@ -55,7 +54,7 @@ When reviewing a PR, always:
 1. Determine changed component(s) by paths and labels (see `.github/labeler.yml`).
 2. Validate that the change scope is focused and matches PR description/ticket.
 3. Check for hidden side effects beyond edited files.
-4. Verify impacted tests and CI jobs are represented.
+4. Verify impacted tests and CI jobs are represented (apply the Test Coverage Analysis procedure in the Testing Expectations section).
 5. For new third-party dependencies or public API changes, verify component labels are present when required by `.github/labeler.yml`.
 6. Leave actionable comments with severity and concrete fix direction.
 
@@ -122,9 +121,7 @@ Before posting any comment, apply this gate:
 - Avoid unnecessary copying of large objects/tensors; prefer references or move semantics.
 - Avoid hidden behavior changes and silent fallback/config mutation without explicit handling.
 - Keep fixes minimal and root-cause oriented; avoid unrelated refactors.
-- Prefer clear naming.
-- Avoid duplicated logic; suggest usage of existing utilities for component, flag duplicated patterns, and suggest consolidation.
-- For constructor-heavy code, prefer proper initializer lists and explicit ownership semantics.
+- Avoid duplicated logic; flag duplicated patterns and suggest consolidation only when the existing utility is confirmed to exist in the changed files or their direct dependencies — do not hallucinate utility names or paths.
 
 ## Security Review Heuristics
 - Treat arithmetic on sizes/offsets/indices as overflow-prone unless guarded.
@@ -139,6 +136,49 @@ Before posting any comment, apply this gate:
 - For architecture-specific changes (x64/ARM64/RISCV, CPU/GPU/NPU), verify appropriate platform/test gating.
 - If tests are skipped/disabled, require explicit rationale and limited scope.
 - If required validation jobs fail, cite the exact failing job(s) and explain impact on merge readiness.
+
+### Test Coverage Analysis for Changed Code
+
+When reviewing a PR that modifies behavioral code (not docs-only, not formatting-only), perform static analysis of test coverage before commenting on test gaps.
+
+#### Step 1: Identify Associated Test Files
+Locate existing tests using OpenVINO directory conventions:
+- `src/core/src/op/<op>.cpp` → `src/core/tests/type_prop/<op>.cpp`, `src/plugins/template/tests/functional/op_reference/<op>.cpp`
+- `src/common/transformations/src/<pass>.cpp` → `src/common/transformations/tests/` (matched by pass name or subdirectory)
+- `src/plugins/intel_cpu/src/nodes/<node>.cpp` → `src/plugins/intel_cpu/tests/functional/custom/single_layer_tests/` (matched by op type)
+- `src/plugins/intel_gpu/src/kernel_selector/` → `src/plugins/intel_gpu/tests/unit/test_cases/` and `src/plugins/intel_gpu/tests/functional/`
+- `src/frontends/<fe>/src/op/<op>.cpp` → `src/frontends/<fe>/tests/` (matched by op or test model name)
+- `src/bindings/python/src/pyopenvino/` → `src/bindings/python/tests/` (matched by `test_<module>.py` in subdirectories)
+- `src/bindings/c/src/` → `src/bindings/c/tests/`
+- When uncertain, search the PR diff for test files that `#include` or reference the changed class/function names.
+
+Do not guess test file locations. If no matching test file is found via conventions or references, state that explicitly rather than hallucinating a path.
+
+#### Step 2: Assess Logical Coverage of Changed Code Paths
+For each materially changed function or code block:
+1. Enumerate reachable branches introduced or modified by the PR (new `if`/`else`/`switch` arms, loop bounds, early returns, exception throws).
+2. Check which branches are exercised by existing tests and by tests added in the PR — look for test parameters, input shapes, attribute combinations, and assertions that activate each branch.
+3. Identify uncovered paths — branches, edge-case inputs, or error-handling paths that no test appears to reach.
+
+Only report uncovered paths meeting **all three** criteria:
+- The path is reachable in practice (not dead code or compile-time eliminated).
+- The path has observable user/runtime impact if incorrect (wrong output, crash, security issue, silent data corruption).
+- The gap is concrete: specify the input condition, the untested branch, and what a test should assert.
+
+#### Step 3: Suggest Missing Test Scenarios
+When reporting a test coverage gap, use these category prefixes:
+
+- `[TEST-GAP]` — functional correctness: missing edge-case inputs (zero-sized tensors, scalar inputs, max rank, negative indices), missing dtype/shape combinations (mixed precision, dynamic vs static dims), missing non-default attribute values, missing multi-consumer/multi-output scenarios.
+- `[TEST-REGRESSION]` — bug-fix PRs without a test reproducing the original failure; transformation changes without a test graph matching old and new patterns.
+- `[TEST-SDL]` — arithmetic on user-controlled dimensions without overflow test; signed/unsigned boundary inputs (`INT64_MAX`, `-1` for unsigned); malformed model inputs in frontends (missing attributes, out-of-range enums, self-referencing nodes); file/path inputs without validation (traversal, null bytes); unchecked `static_cast`/`reinterpret_cast` on model-derived values.
+- `[TEST-PARITY]` — op behavior change in one plugin without cross-backend functional test; layout/precision assumption changes that may diverge across CPU/GPU/NPU.
+
+#### Test Gap Comment Constraints
+- Do not suggest tests for paths already covered by tests visible in the PR or found in Step 1.
+- Do not suggest tests when the change is trivially correct (rename, log line, comment update).
+- At most **3 test gap comments** per review, ranked by: SDL → regression → functional → parity. These count toward the overall comment budget.
+- Each comment must include: (a) the untested condition, (b) the code location, (c) what the test should verify. Do not write full test implementations unless under 15 lines.
+- If existing tests are comprehensive and the PR adds appropriate coverage, acknowledge this in the review summary — do not force unnecessary additions.
 
 ### CI Failure Log Analysis
 When CI/GitHub Actions results are available and a job has failed:
@@ -177,7 +217,6 @@ Comment quality constraints:
 - Avoid low-value comments that conflict with auto-formatting or established project conventions.
 
 ## Output Requirements for Automated Reviews
-- Focus only on issues materially affecting quality gates.
 - Do not invent project rules; reference existing repository conventions and paths.
 - If uncertain, state assumptions explicitly and ask for clarification rather than guessing.
 - Provide a concise review summary of top risks, test/CI impact, and any unresolved questions.
