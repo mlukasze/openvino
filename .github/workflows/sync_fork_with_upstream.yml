@@ -1,0 +1,48 @@
+name: Sync fork with upstream
+
+on:
+  schedule:
+    # Run daily at 14:00 UTC (~16:00 UTC+2)
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-fork-with-upstream
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.repository == 'mlukasze/openvino'
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b # cherry_pick_retries
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Sync master with upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git remote add upstream https://github.com/openvinotoolkit/openvino.git
+          git fetch --no-tags upstream master
+          git fetch --no-tags origin master
+
+          local_sha="$(git rev-parse refs/remotes/origin/master)"
+          upstream_sha="$(git rev-parse refs/remotes/upstream/master)"
+
+          if [[ "${local_sha}" == "${upstream_sha}" ]]; then
+            echo "Fork master is already up to date."
+            exit 0
+          fi
+
+          git push origin \
+            refs/remotes/upstream/master:refs/heads/master \
+            --force-with-lease=master:"${local_sha}"
