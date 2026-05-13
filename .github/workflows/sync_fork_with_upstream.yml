@@ -20,10 +20,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      # cherry_pick_retries
+      # v4.2.2
       - name: Checkout repository
         uses: >-
-          ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b
+          actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: master
           fetch-depth: 0
@@ -47,6 +47,9 @@ jobs:
             exit 0
           fi
 
-          git push origin \
-            refs/remotes/upstream/master:refs/heads/master \
-            --force-with-lease=master:"${local_sha}"
+          if ! git merge-base --is-ancestor "${local_sha}" "${upstream_sha}"; then
+            echo "origin/master is not behind upstream/master; refusing to rewrite history."
+            exit 1
+          fi
+
+          git push origin refs/remotes/upstream/master:refs/heads/master
