@@ -47,7 +47,7 @@ jobs:
           fi
 
           if ! git merge-base --is-ancestor "${local_sha}" "${upstream_sha}"; then
-            echo "origin/master has diverged from or is ahead of upstream/master; cannot fast-forward."
+            echo "origin/master is not an ancestor of upstream/master; cannot fast-forward."
             exit 1
           fi
 
