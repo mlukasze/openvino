@@ -35,7 +35,7 @@ jobs:
 
           upstream_url="https://github.com/openvinotoolkit/openvino.git"
           git remote add upstream "${upstream_url}"
-          git fetch --no-tags upstream master
+          git fetch upstream master
 
           local_sha="$(git rev-parse HEAD)"
           upstream_ref="refs/remotes/upstream/master"
@@ -51,4 +51,4 @@ jobs:
             exit 1
           fi
 
-          git push origin refs/remotes/upstream/master:refs/heads/master
+          git push origin upstream/master:master
