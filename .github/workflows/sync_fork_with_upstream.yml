@@ -36,9 +36,8 @@ jobs:
           upstream_url="https://github.com/openvinotoolkit/openvino.git"
           git remote add upstream "${upstream_url}"
           git fetch --no-tags upstream master
-          git fetch --no-tags origin master
 
-          local_sha="$(git rev-parse refs/remotes/origin/master)"
+          local_sha="$(git rev-parse HEAD)"
           upstream_ref="refs/remotes/upstream/master"
           upstream_sha="$(git rev-parse "${upstream_ref}")"
 
@@ -48,7 +47,7 @@ jobs:
           fi
 
           if ! git merge-base --is-ancestor "${local_sha}" "${upstream_sha}"; then
-            echo "origin/master is not behind upstream/master; refusing to rewrite history."
+            echo "origin/master has diverged from or is ahead of upstream/master; cannot fast-forward."
             exit 1
           fi
 
